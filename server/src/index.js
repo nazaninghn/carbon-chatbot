@@ -204,16 +204,28 @@ async function startApp() {
     } catch {
       logger.warn('⚠ Local MongoDB not available — starting in-memory fallback (data will not persist across restarts)');
       logger.warn('   To fix: run "net start MongoDB" in an admin terminal, or install MongoDB from https://www.mongodb.com/try/download/community');
-      const { MongoMemoryServer } = require('mongodb-memory-server');
-      const mongod = await MongoMemoryServer.create();
-      mongoUri = mongod.getUri();
-      await mongoose.connect(mongoUri);
-      usingMemory = true;
-      logger.warn('⚠ In-memory MongoDB started — for development only');
+      try {
+        const { MongoMemoryServer } = require('mongodb-memory-server');
+        const mongod = await MongoMemoryServer.create();
+        mongoUri = mongod.getUri();
+        await mongoose.connect(mongoUri);
+        usingMemory = true;
+        logger.warn('⚠ In-memory MongoDB started — for development only');
+      } catch (memErr) {
+        logger.error('❌ Cannot start in-memory MongoDB:', memErr.message);
+        logger.error('   Install MongoDB or set MONGODB_URI to Atlas connection string');
+        process.exit(1);
+      }
     }
   } else {
-    await mongoose.connect(mongoUri);
-    logger.info(`✅ MongoDB connected: ${mongoose.connection.host}`);
+    try {
+      await mongoose.connect(mongoUri);
+      logger.info(`✅ MongoDB connected: ${mongoose.connection.host}`);
+    } catch (err) {
+      logger.error('❌ MongoDB connection failed:', err.message);
+      logger.error('   MONGODB_URI:', mongoUri ? mongoUri.substring(0, 30) + '...' : 'NOT SET');
+      process.exit(1);
+    }
   }
 
   server.listen(PORT, () => {
