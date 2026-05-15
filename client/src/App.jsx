@@ -1,83 +1,89 @@
-import { useState, useEffect } from 'react';
-import AuthPage from './pages/AuthPage';
+import { useState, useEffect, useRef } from 'react';
 import ChatPage from './pages/ChatPage';
 import AdminPage from './pages/AdminPage';
 
-async function autoLogin() {
-  // Try existing token first
-  const token = localStorage.getItem('ciq_token');
-  if (token) {
-    const r = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
-    if (r.ok) {
-      const data = await r.json();
-      return { token, user: data.user };
-    }
+const DEMO_EMAIL = 'demo@carboniq.app';
+const DEMO_PASS  = 'carboniq2024';
+const DEMO_NAME  = 'Demo User';
+
+async function getAuth() {
+  // 1. Valid token already in storage?
+  const stored = localStorage.getItem('ciq_token');
+  if (stored) {
+    const r = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${stored}` } });
+    if (r.ok) { const d = await r.json(); return { token: stored, user: d.user }; }
     localStorage.removeItem('ciq_token');
     localStorage.removeItem('ciq_session');
   }
-  // Auto-register a guest account
-  const guestId = localStorage.getItem('ciq_guest_id') || crypto.randomUUID();
-  localStorage.setItem('ciq_guest_id', guestId);
-  const r = await fetch('/api/auth/register', {
+  // 2. Try login
+  const login = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: 'Guest',
-      email: `guest_${guestId}@carboniq.app`,
-      password: guestId,
-      company: '',
-    }),
+    body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASS }),
   });
-  if (r.ok) {
-    const data = await r.json();
-    localStorage.setItem('ciq_token', data.token);
-    return { token: data.token, user: data.user };
+  if (login.ok) {
+    const d = await login.json();
+    localStorage.setItem('ciq_token', d.token);
+    return { token: d.token, user: d.user };
   }
-  // Guest already registered — login
-  const r2 = await fetch('/api/auth/login', {
+  // 3. Register demo account (first ever visit)
+  const reg = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: `guest_${guestId}@carboniq.app`, password: guestId }),
+    body: JSON.stringify({ name: DEMO_NAME, email: DEMO_EMAIL, password: DEMO_PASS }),
   });
-  if (r2.ok) {
-    const data = await r2.json();
-    localStorage.setItem('ciq_token', data.token);
-    return { token: data.token, user: data.user };
+  if (reg.ok) {
+    const d = await reg.json();
+    localStorage.setItem('ciq_token', d.token);
+    return { token: d.token, user: d.user };
   }
   return null;
 }
 
 export default function App() {
-  const [lang, setLang] = useState('tr');
-  const [auth, setAuth] = useState(null);
-  const [checking, setChecking] = useState(true);
-  const [view, setView] = useState('chat');
+  const [lang, setLang]   = useState('tr');
+  const [auth, setAuth]   = useState(null);
+  const [ready, setReady] = useState(false);
+  const [view, setView]   = useState('chat');
+  const retryRef = useRef(null);
 
-  useEffect(() => {
-    autoLogin()
-      .then(result => { if (result) setAuth(result); })
-      .finally(() => setChecking(false));
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('ciq_token');
-    localStorage.removeItem('ciq_session');
-    setAuth(null);
-    setView('chat');
+  const tryConnect = () => {
+    getAuth()
+      .then(result => {
+        if (result) { setAuth(result); setReady(true); }
+        else {
+          // Backend sleeping — retry in 3 s
+          retryRef.current = setTimeout(tryConnect, 3000);
+        }
+      })
+      .catch(() => { retryRef.current = setTimeout(tryConnect, 3000); });
   };
 
-  if (checking || !auth) {
+  useEffect(() => {
+    tryConnect();
+    return () => clearTimeout(retryRef.current);
+  }, []);
+
+  if (!ready) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: 'linear-gradient(150deg, #dde8d8 0%, #c8d9be 30%, #b5c9a8 60%, #a3b895 100%)' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3"
+        style={{ background: 'linear-gradient(150deg,#dde8d8 0%,#c8d9be 30%,#b5c9a8 60%,#a3b895 100%)' }}>
         <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: '#588157 transparent' }} />
-        {!checking && <p className="text-sm" style={{ color: '#588157' }}>Connecting...</p>}
+        <p className="text-sm" style={{ color: '#588157' }}>Loading...</p>
       </div>
     );
   }
 
-  if (view === 'admin' && auth.user?.role === 'admin') {
+  if (view === 'admin' && auth?.user?.role === 'admin') {
     return <AdminPage auth={auth} lang={lang} onBack={() => setView('chat')} />;
   }
 
-  return <ChatPage lang={lang} setLang={setLang} auth={auth} onLogout={handleLogout} onAdmin={() => setView('admin')} />;
+  return (
+    <ChatPage
+      lang={lang} setLang={setLang}
+      auth={auth}
+      onLogout={() => { localStorage.removeItem('ciq_token'); localStorage.removeItem('ciq_session'); setAuth(null); setReady(false); tryConnect(); }}
+      onAdmin={() => setView('admin')}
+    />
+  );
 }
