@@ -66,16 +66,13 @@ export default function App() {
     setView('chat');
   };
 
-  if (checking) {
+  if (checking || !auth) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(150deg, #dde8d8 0%, #c8d9be 30%, #b5c9a8 60%, #a3b895 100%)' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: 'linear-gradient(150deg, #dde8d8 0%, #c8d9be 30%, #b5c9a8 60%, #a3b895 100%)' }}>
         <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: '#588157 transparent' }} />
+        {!checking && <p className="text-sm" style={{ color: '#588157' }}>Connecting...</p>}
       </div>
     );
-  }
-
-  if (!auth) {
-    return <AuthPage lang={lang} setLang={setLang} onAuth={setAuth} />;
   }
 
   if (view === 'admin' && auth.user?.role === 'admin') {
