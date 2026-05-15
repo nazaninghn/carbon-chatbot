@@ -218,8 +218,9 @@ async function startApp() {
     // Keep-alive ping for Render free tier (prevents 15-min sleep)
     if (process.env.NODE_ENV === 'production' && process.env.RENDER) {
       const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+      const pinger = selfUrl.startsWith('https') ? require('https') : require('http');
       setInterval(() => {
-        require('http').get(`${selfUrl}/api/health`, () => {}).on('error', () => {});
+        pinger.get(`${selfUrl}/api/health`, () => {}).on('error', () => {});
       }, 10 * 60 * 1000); // ping every 10 min
     }
   });
