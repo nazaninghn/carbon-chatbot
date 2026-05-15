@@ -21,38 +21,17 @@ const app = express();
 const server = http.createServer(app);
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
-// Allow: localhost (any port), any *.vercel.app subdomain, custom CLIENT_URL
-const ALLOWED_ORIGINS = [
-  /^http:\/\/localhost(:\d+)?$/,
-  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
-  /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
-];
-if (process.env.CLIENT_URL) {
-  ALLOWED_ORIGINS.push(process.env.CLIENT_URL);
-}
-
-function isAllowedOrigin(origin) {
-  if (!origin) return true; // non-browser requests (curl, Postman, server-to-server)
-  return ALLOWED_ORIGINS.some(rule =>
-    typeof rule === 'string' ? rule === origin : rule.test(origin)
-  );
-}
-
+// In production, allow all origins (Vercel rewrites handle security)
+// In development, allow localhost
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (isAllowedOrigin(origin)) {
-      callback(null, true);
-    } else {
-      logger.warn(`CORS blocked: ${origin}`);
-      callback(new Error(`CORS: origin '${origin}' not allowed`));
-    }
-  },
+  origin: true,
   credentials: true,
+};
 };
 
 // Socket.IO
 const io = new Server(server, {
-  cors: { origin: (origin, cb) => cb(null, isAllowedOrigin(origin)), methods: ['GET', 'POST'] },
+  cors: { origin: true, methods: ['GET', 'POST'] },
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
