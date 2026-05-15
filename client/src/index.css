@@ -1,0 +1,92 @@
+@import './styles/fonts.css';
+@import './styles/theme.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { height: 100%; }
+
+  body {
+    @apply bg-white text-gray-900 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    height: 100%;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  #root { height: 100%; }
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
+
+/* Dark sidebar scrollbar */
+.dark-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); }
+.dark-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.16); }
+
+/* ── Message animation ─────────────────────────────────────── */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.message-animate { animation: msg-in 0.25s ease-out forwards; }
+
+/* ── Sidebar phase dot pulse ───────────────────────────────── */
+@keyframes phase-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Input focus ring ──────────────────────────────────────── */
+.input-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+}
+
+/* ── Option card hover lift ────────────────────────────────── */
+.option-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.option-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,.06);
+}
+
+/* ── Prose resets for chat bubbles ─────────────────────────── */
+.prose p:first-child { margin-top: 0; }
+.prose p:last-child  { margin-bottom: 0; }
+
+/* ── Voice recording pulse ─────────────────────────────────── */
+@keyframes voice-pulse {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.voice-recording::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.3);
+  animation: voice-pulse 1.2s ease-out infinite;
+}
+
+/* ── HeroPage animations (used in HeroPage.jsx) ────────────── */
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-rise          { animation: fade-rise 0.75s ease-out forwards; }
+.animate-fade-rise-delay    { animation: fade-rise 0.75s ease-out 0.18s forwards; opacity: 0; }
+.animate-fade-rise-delay-2  { animation: fade-rise 0.75s ease-out 0.36s forwards; opacity: 0; }
+.animate-fade-rise-delay-3  { animation: fade-rise 0.75s ease-out 0.54s forwards; opacity: 0; }
+
+/* ── Sidebar active glow ───────────────────────────────────── */
+.phase-active-glow {
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.2);
+}
