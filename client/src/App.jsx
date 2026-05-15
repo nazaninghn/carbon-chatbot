@@ -3,19 +3,59 @@ import AuthPage from './pages/AuthPage';
 import ChatPage from './pages/ChatPage';
 import AdminPage from './pages/AdminPage';
 
+async function autoLogin() {
+  // Try existing token first
+  const token = localStorage.getItem('ciq_token');
+  if (token) {
+    const r = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+    if (r.ok) {
+      const data = await r.json();
+      return { token, user: data.user };
+    }
+    localStorage.removeItem('ciq_token');
+    localStorage.removeItem('ciq_session');
+  }
+  // Auto-register a guest account
+  const guestId = localStorage.getItem('ciq_guest_id') || crypto.randomUUID();
+  localStorage.setItem('ciq_guest_id', guestId);
+  const r = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Guest',
+      email: `guest_${guestId}@carboniq.app`,
+      password: guestId,
+      company: '',
+    }),
+  });
+  if (r.ok) {
+    const data = await r.json();
+    localStorage.setItem('ciq_token', data.token);
+    return { token: data.token, user: data.user };
+  }
+  // Guest already registered — login
+  const r2 = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: `guest_${guestId}@carboniq.app`, password: guestId }),
+  });
+  if (r2.ok) {
+    const data = await r2.json();
+    localStorage.setItem('ciq_token', data.token);
+    return { token: data.token, user: data.user };
+  }
+  return null;
+}
+
 export default function App() {
   const [lang, setLang] = useState('tr');
   const [auth, setAuth] = useState(null);
   const [checking, setChecking] = useState(true);
-  const [view, setView] = useState('chat'); // 'chat' or 'admin'
+  const [view, setView] = useState('chat');
 
   useEffect(() => {
-    const token = localStorage.getItem('ciq_token');
-    if (!token) { setChecking(false); return; }
-    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => setAuth({ token, user: data.user }))
-      .catch(() => { localStorage.removeItem('ciq_token'); localStorage.removeItem('ciq_session'); })
+    autoLogin()
+      .then(result => { if (result) setAuth(result); })
       .finally(() => setChecking(false));
   }, []);
 
