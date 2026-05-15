@@ -1,5 +1,6 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), override: true });
+const envPath = path.resolve(__dirname, '..', '.env');
+require('dotenv').config({ path: envPath, override: true });
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -249,6 +250,7 @@ async function startApp() {
 }
 
 startApp().catch((err) => {
+  console.error('FATAL ERROR:', err);
   logger.error('Failed to start application:', err);
   process.exit(1);
 });
