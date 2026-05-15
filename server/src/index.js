@@ -27,7 +27,6 @@ const corsOptions = {
   origin: true,
   credentials: true,
 };
-};
 
 // Socket.IO
 const io = new Server(server, {
