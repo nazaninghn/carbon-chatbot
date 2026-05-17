@@ -34,6 +34,7 @@ const io = new Server(server, {
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
+app.set('trust proxy', 1); // Trust Render/Vercel proxy for rate-limit
 app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
