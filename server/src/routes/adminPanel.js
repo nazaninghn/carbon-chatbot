@@ -4,12 +4,17 @@ const Session = require('../models/Session');
 const router  = express.Router();
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// Credentials come from env vars. Defaults are for local dev only.
+const PANEL_KEY  = process.env.ADMIN_PANEL_KEY  || 'carboniq2024';
+const PANEL_USER = process.env.ADMIN_PANEL_USER || 'admin';
+const PANEL_PASS = process.env.ADMIN_PANEL_PASS || 'Admin@2024';
+
 function checkAuth(req, res, next) {
-  if (req.query.key === 'carboniq2024') return next();
+  if (req.query.key === PANEL_KEY) return next();
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Basic ')) {
     const [user, pass] = Buffer.from(auth.slice(6), 'base64').toString().split(':');
-    if (user === 'admin' && pass === 'Admin@2024') return next();
+    if (user === PANEL_USER && pass === PANEL_PASS) return next();
   }
   res.set('WWW-Authenticate', 'Basic realm="CarbonIQ Admin"');
   res.status(401).send('Authentication required');
@@ -81,11 +86,38 @@ function extractJourney(messages, reportData) {
   }));
 }
 
+// ── User list (matches nav link) ──────────────────────────────────────────────
+router.get('/users', async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ createdAt: -1 }).lean();
+    res.send(renderPage('Kullanıcılar', `
+      <div class="section">
+        <h3>Tüm Kullanıcılar (${users.length})</h3>
+        <table>
+          <tr><th>Ad</th><th>Email</th><th>Şirket</th><th>Rol</th><th>Kayıt</th><th></th></tr>
+          ${users.map(u => `<tr>
+            <td><a href="/admin/users/${u._id}"><strong>${esc(u.name)}</strong></a></td>
+            <td style="color:#888">${esc(u.email)}</td>
+            <td>${esc(u.company || '—')}</td>
+            <td><span class="badge ${u.role === 'admin' ? 'badm' : ''}">${u.role}</span></td>
+            <td style="font-size:12px;color:#999">${new Date(u.createdAt).toLocaleDateString('tr-TR')}</td>
+            <td><a href="/admin/users/${u._id}" class="btn-sm">Takip Et →</a></td>
+          </tr>`).join('')}
+        </table>
+      </div>
+      <a href="/admin" class="back">← Dashboard</a>
+    `));
+  } catch (err) {
+    res.status(500).send(`<pre>Error: ${esc(err.message)}</pre>`);
+  }
+});
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
+  try {
   const [users, sessions, activeCount] = await Promise.all([
     User.find().select('-password').sort({ createdAt: -1 }).lean(),
-    Session.find().sort({ updatedAt: -1 }).lean(),
+    Session.find().sort({ updatedAt: -1 }).limit(200).lean(), // cap at 200 to avoid full table scan
     Session.countDocuments({ status: 'active' }),
   ]);
 
@@ -157,17 +189,23 @@ router.get('/', async (req, res) => {
             <td style="font-size:12px;color:#999">${timeAgo(s.updatedAt || s.createdAt)}</td>
             <td>
               <a href="/admin/sessions/${s._id}" class="btn-sm">Gör</a>
-              <a href="/admin/sessions/${s._id}/delete" class="del" onclick="return confirm('Sil?')">✕</a>
+              <form method="POST" action="/admin/sessions/${s._id}/delete" style="display:inline" onsubmit="return confirm('Sil?')">
+                <button type="submit" class="del">✕</button>
+              </form>
             </td>
           </tr>`;
         }).join('')}
       </table>
     </div>
   `));
+  } catch (err) {
+    res.status(500).send(`<pre>Error: ${esc(err.message)}</pre>`);
+  }
 });
 
 // ── User Detail — complete tracking ──────────────────────────────────────────
 router.get('/users/:id', async (req, res) => {
+  try {
   const [user, sessions] = await Promise.all([
     User.findById(req.params.id).select('-password').lean(),
     Session.find({ userId: req.params.id }).sort({ updatedAt: -1 }).lean(),
@@ -317,14 +355,20 @@ router.get('/users/:id', async (req, res) => {
     <div style="margin-top:8px;display:flex;gap:16px">
       <a href="/admin" class="back">← Dashboard</a>
       ${user.role !== 'admin'
-        ? `<a href="/admin/users/${user._id}/delete" class="del" onclick="return confirm('Kullanıcı ve tüm verileri silinsin mi?')">Kullanıcıyı Sil</a>`
+        ? `<form method="POST" action="/admin/users/${user._id}/delete" style="display:inline" onsubmit="return confirm('Kullanıcı ve tüm verileri silinsin mi?')">
+            <button type="submit" class="del">Kullanıcıyı Sil</button>
+           </form>`
         : ''}
     </div>
   `));
+  } catch (err) {
+    res.status(500).send(`<pre>Error: ${esc(err.message)}</pre>`);
+  }
 });
 
 // ── Session Detail ────────────────────────────────────────────────────────────
 router.get('/sessions/:id', async (req, res) => {
+  try {
   const session = await Session.findById(req.params.id).lean();
   if (!session) return res.status(404).send('Bulunamadı');
 
@@ -414,20 +458,33 @@ router.get('/sessions/:id', async (req, res) => {
     <div style="margin-top:16px;display:flex;gap:16px;align-items:center">
       <a href="/admin" class="back">← Dashboard</a>
       ${user ? `<a href="/admin/users/${user._id}" class="back">← Kullanıcı</a>` : ''}
-      <a href="/admin/sessions/${session._id}/delete" class="del" onclick="return confirm('Oturumu sil?')">Oturumu Sil</a>
+      <form method="POST" action="/admin/sessions/${session._id}/delete" style="display:inline" onsubmit="return confirm('Oturumu sil?')">
+        <button type="submit" class="del">Oturumu Sil</button>
+      </form>
     </div>
   `));
+  } catch (err) {
+    res.status(500).send(`<pre>Error: ${esc(err.message)}</pre>`);
+  }
 });
 
-// ── Delete routes ─────────────────────────────────────────────────────────────
-router.get('/sessions/:id/delete', async (req, res) => {
-  await Session.findByIdAndDelete(req.params.id);
-  res.redirect('/admin');
+// ── Delete routes (POST — prevents CSRF via link prefetch / GET requests) ─────
+router.post('/sessions/:id/delete', async (req, res) => {
+  try {
+    await Session.findByIdAndDelete(req.params.id);
+    res.redirect('/admin');
+  } catch (err) {
+    res.status(500).send(`<pre>Error: ${esc(err.message)}</pre>`);
+  }
 });
-router.get('/users/:id/delete', async (req, res) => {
-  await User.findByIdAndDelete(req.params.id);
-  await Session.deleteMany({ userId: req.params.id });
-  res.redirect('/admin/users');
+router.post('/users/:id/delete', async (req, res) => {
+  try {
+    await User.findByIdAndDelete(req.params.id);
+    await Session.deleteMany({ userId: req.params.id });
+    res.redirect('/admin');
+  } catch (err) {
+    res.status(500).send(`<pre>Error: ${esc(err.message)}</pre>`);
+  }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

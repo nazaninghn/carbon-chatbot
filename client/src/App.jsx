@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import ChatPage from './pages/ChatPage';
 import AdminPage from './pages/AdminPage';
 
-const DEMO_EMAIL = 'demo@carboniq.app';
-const DEMO_PASS  = 'carboniq2024';
-const DEMO_NAME  = 'Demo User';
+// Demo credentials — override via VITE_DEMO_EMAIL / VITE_DEMO_PASS in .env
+const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || 'demo@carboniq.app';
+const DEMO_PASS  = import.meta.env.VITE_DEMO_PASS  || 'carboniq2024';
+const DEMO_NAME  = import.meta.env.VITE_DEMO_NAME  || 'Demo User';
 
 async function getAuth() {
   // 1. Valid token already in storage?
@@ -45,18 +46,31 @@ export default function App() {
   const [auth, setAuth]   = useState(null);
   const [ready, setReady] = useState(false);
   const [view, setView]   = useState('chat');
-  const retryRef = useRef(null);
+  const retryRef    = useRef(null);
+  const retryCount  = useRef(0);
+  const MAX_RETRIES = 20; // ~60 s of attempts before giving up
 
   const tryConnect = () => {
     getAuth()
       .then(result => {
-        if (result) { setAuth(result); setReady(true); }
-        else {
-          // Backend sleeping — retry in 3 s
-          retryRef.current = setTimeout(tryConnect, 3000);
+        if (result) { retryCount.current = 0; setAuth(result); setReady(true); }
+        else if (retryCount.current < MAX_RETRIES) {
+          // Backend waking up (Render free tier) — retry with backoff
+          retryCount.current++;
+          const delay = Math.min(3000 * retryCount.current, 15000);
+          retryRef.current = setTimeout(tryConnect, delay);
+        } else {
+          setReady(true); // show app anyway; individual fetches will fail gracefully
         }
       })
-      .catch(() => { retryRef.current = setTimeout(tryConnect, 3000); });
+      .catch(() => {
+        if (retryCount.current < MAX_RETRIES) {
+          retryCount.current++;
+          retryRef.current = setTimeout(tryConnect, 3000);
+        } else {
+          setReady(true);
+        }
+      });
   };
 
   useEffect(() => {

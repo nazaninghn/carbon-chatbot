@@ -48,7 +48,7 @@ const content = {
     registerTab: 'Kayıt Ol',
     emailLabel:  'E-posta',
     emailPh:     'ornek@sirket.com',
-    passLabel:   'Rمز عبور',
+    passLabel:   'Şifre',
     passPh:      '••••••••',
     loginBtn:    'Giriş Yap →',
     loggingIn:   'Giriş yapılıyor…',
