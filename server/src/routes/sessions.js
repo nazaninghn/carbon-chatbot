@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Session = require('../models/Session');
+const questionFlowService = require('../services/questionFlowService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -67,7 +68,11 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    res.json({ session });
+    // Compute authoritative question number server-side so the client
+    // doesn't have to count user messages (which is off-by-one when restored)
+    const questionNumber = questionFlowService.getQuestionNumber(session.currentQuestion) || 1;
+
+    res.json({ session, questionNumber });
   } catch (error) {
     logger.error('Get session error:', error);
     res.status(500).json({ error: 'Failed to fetch session' });

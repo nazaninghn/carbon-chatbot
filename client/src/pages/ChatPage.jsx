@@ -430,13 +430,21 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
   const [showExport, setShowExport]     = useState(false);
   const [exportTab, setExportTab]       = useState('summary');
 
-  const messagesEndRef = useRef(null);
-  const inputRef       = useRef(null);
+  const [atBottom, setAtBottom]          = useState(true);
+  const messagesEndRef  = useRef(null);
+  const chatScrollRef   = useRef(null);
+  const inputRef        = useRef(null);
   const sessionRef     = useRef(null);
   const tokenRef       = useRef(null);
 
+  const isFirstScroll = useRef(true);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use 'instant' on first load so the user lands at the bottom,
+    // then 'smooth' for subsequent new messages while they're already at bottom.
+    const behavior = isFirstScroll.current ? 'instant' : 'smooth';
+    isFirstScroll.current = false;
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setAtBottom(true);
   }, [messages, isTyping]);
 
   // ── Init: set token from auth prop, then restore session ──
@@ -454,7 +462,10 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
     }
   }, [auth]);
 
-  const applySession = useCallback((token, sessionId, session) => {
+  // questionNumber is passed from the server (authoritative) so we don't
+  // have to count user messages, which is always off-by-one:
+  // counting gives #answered, but the counter should show #current question.
+  const applySession = useCallback((token, sessionId, session, questionNumber) => {
     tokenRef.current   = token;
     sessionRef.current = sessionId;
     if (session.messages?.length) {
@@ -465,8 +476,13 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
       })));
     }
     if (session.currentPhase) setCurrentPhase(session.currentPhase);
-    const qNum = session.messages?.filter(m => m.role === 'user').length || 0;
-    setQuestionNumber(qNum);
+    // Use server-provided questionNumber (getQuestionNumber(currentQuestion))
+    // falling back to counting only if the server didn't provide it.
+    if (questionNumber) {
+      setQuestionNumber(questionNumber);
+    } else {
+      setQuestionNumber(session.messages?.filter(m => m.role === 'user').length || 0);
+    }
     setReady(true);
     setStarted(true);
   }, []);
@@ -479,7 +495,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
       const res = await fetch(`/api/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('session not found');
       const data = await res.json();
-      applySession(token, sessionId, data.session || data);
+      applySession(token, sessionId, data.session || data, data.questionNumber);
     } catch {
       localStorage.removeItem('ciq_token');
       localStorage.removeItem('ciq_session');
@@ -578,7 +594,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       localStorage.setItem('ciq_session', sessionId);
-      applySession(tokenRef.current, sessionId, data.session || data);
+      applySession(tokenRef.current, sessionId, data.session || data, data.questionNumber);
       setSidebarTab('phases');
       setSidebarOpen(false);
     } catch (err) { console.error(err); }
@@ -768,7 +784,28 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
           </header>
 
           {/* Messages */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div
+            ref={chatScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto relative"
+            onScroll={() => {
+              const el = chatScrollRef.current;
+              if (!el) return;
+              setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+            }}
+          >
+            {/* Scroll-to-bottom button — shown only when user has scrolled up */}
+            {!atBottom && started && (
+              <button
+                onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                className="sticky top-2 float-right mr-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all"
+                style={{ background: C.fern, color: '#fff', border: 'none', cursor: 'pointer' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 5v14M5 12l7 7 7-7"/>
+                </svg>
+                {lang === 'tr' ? 'Güncel soruya git' : 'Jump to current question'}
+              </button>
+            )}
             <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
 
               {/* Restoring spinner */}
