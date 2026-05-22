@@ -182,6 +182,11 @@ FORMAT: **kalın** önemli terimler için, ✅ başarı, ⚠ uyarı, ✗ hata.`;
         max_tokens: this.maxTokens,
       });
 
+      // Guard against API content-filter refusals that return empty choices
+      if (!completion.choices?.length || !completion.choices[0]?.message?.content) {
+        logger.warn('Groq returned empty choices — falling back to mock');
+        return this.getMockResponse(userMessage, sessionContext);
+      }
       const assistantMessage = completion.choices[0].message.content;
       const metadata = this.extractMetadata(assistantMessage, sessionContext);
 
@@ -216,8 +221,8 @@ FORMAT: **kalın** önemli terimler için, ✅ başarı, ⚠ uyarı, ✗ hata.`;
       for (const r of semanticResults) {
         if (!seen.has(r._id?.toString())) results.push(r);
       }
-    } catch {
-      // continue without RAG context
+    } catch (ragErr) {
+      logger.warn('RAG context retrieval failed (continuing without context):', ragErr.message);
     }
 
     return results.slice(0, 5);
@@ -233,17 +238,23 @@ FORMAT: **kalın** önemli terimler için, ✅ başarı, ⚠ uyarı, ✗ hata.`;
     };
 
     if (response.includes('[NEXT_QUESTION]')) {
+      // Only [NEXT_QUESTION] advances the flow — not ✅ alone.
+      // The LLM is instructed to emit this token when valid; if it forgets,
+      // the user can retry rather than silently advancing on a bad answer.
       metadata.action = 'next';
       metadata.validationStatus = 'valid';
     } else if (response.includes('[PREV_QUESTION]')) {
       metadata.action = 'prev';
-    } else if (response.includes('✗') || response.includes('✗')) {
+    } else if (response.includes('✗') || response.includes('✕')) {
+      // ✗ U+2717 (ballot X) or ✕ U+2715 (multiplication X) — both mean invalid
       metadata.validationStatus = 'invalid';
     } else if (response.includes('⚠')) {
       metadata.validationStatus = 'warning';
     } else if (response.includes('✅')) {
+      // ✅ present but [NEXT_QUESTION] absent — treat as validation-passed but
+      // do NOT advance; the LLM response probably omitted the token by mistake.
+      // This keeps the question in place so the user is not silently skipped.
       metadata.validationStatus = 'valid';
-      metadata.action = 'next';
     }
 
     return metadata;

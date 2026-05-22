@@ -40,11 +40,15 @@ const QUESTION_FLOW = {
   '2A-4': { phase: 2, block: '2A', next: '2A-5', required: false, showIf: (data) => data.C1 === 'yes' },
   '2A-5': { phase: 2, block: '2A', next: '2B-OC1', required: false, showIf: (data) => data.C1 === 'yes' && data.D3 === 'equity_share' },
   // Phase 2 - Boundary Tests
+  // Boundary-approach branches. The skip loop in getNextQuestion walks the
+  // chain and shows only the branch matching reportData.D3.
+  // Chain: OC1 → OC2 → FC1 → FC2 → EQ1 → 2C-1
+  // Each block's showIf ensures only the right branch is visible.
   '2B-OC1': { phase: 2, block: '2B', next: '2B-OC2', required: false, showIf: (data) => data.D3 === 'operational_control' },
-  '2B-OC2': { phase: 2, block: '2B', next: '2C-1', required: false, showIf: (data) => data.D3 === 'operational_control' },
+  '2B-OC2': { phase: 2, block: '2B', next: '2B-FC1', required: false, showIf: (data) => data.D3 === 'operational_control' },
   '2B-FC1': { phase: 2, block: '2B', next: '2B-FC2', required: false, showIf: (data) => data.D3 === 'financial_control' },
-  '2B-FC2': { phase: 2, block: '2B', next: '2C-1', required: false, showIf: (data) => data.D3 === 'financial_control' },
-  '2B-EQ1': { phase: 2, block: '2B', next: '2C-1', required: false, showIf: (data) => data.D3 === 'equity_share' },
+  '2B-FC2': { phase: 2, block: '2B', next: '2B-EQ1', required: false, showIf: (data) => data.D3 === 'financial_control' },
+  '2B-EQ1': { phase: 2, block: '2B', next: '2C-1',   required: false, showIf: (data) => data.D3 === 'equity_share' },
   // Phase 2 - Exclusions
   '2C-1': { phase: 2, block: '2C', next: '2C-2', required: true },
   '2C-2': { phase: 2, block: '2C', next: '2C-3', required: true },
@@ -195,6 +199,15 @@ class QuestionFlowService {
     const allIds = Object.keys(QUESTION_FLOW);
     const idx = allIds.indexOf(questionId);
     return idx >= 0 ? idx + 1 : null;
+  }
+
+  /**
+   * Return the full QUESTION_FLOW map (all 133 IDs in order).
+   * Used by back-navigation handlers in chat.js and chatHandler.js so they
+   * iterate all questions, not just the Phase 1 QUESTIONS object.
+   */
+  getAllFlowIds() {
+    return QUESTION_FLOW;
   }
 
   /**

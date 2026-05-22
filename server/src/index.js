@@ -76,15 +76,15 @@ app.use('/api/admin', authenticateToken, adminRoutes);
 app.use('/admin', adminPanel);
 
 // ── Health check (JSON) ───────────────────────────────────────────────────────
+// NOTE: this endpoint is intentionally public (used by Render health-check and
+// the Render keep-alive pinger). Do NOT expose API keys or sensitive config here.
 app.get('/api/health', (req, res) => {
   const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     db: dbStates[mongoose.connection.readyState] || 'unknown',
-    dbUri: mongoose.connection.host || 'in-memory',
     groq: !!process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'YOUR_GROQ_KEY_HERE',
-    env: process.env.NODE_ENV,
     version: '1.0.0',
   });
 });
@@ -224,14 +224,37 @@ async function startApp() {
       logger.warn('   ⚠ DATA WILL BE LOST ON RESTART (in-memory mode)');
     }
 
-    // Keep-alive ping for Render free tier (prevents 15-min sleep)
+    // Keep-alive ping for Render free tier (prevents 15-min sleep).
+    // Store the interval so it can be cleared on graceful shutdown.
+    let keepAliveTimer = null;
     if (process.env.NODE_ENV === 'production' && process.env.RENDER) {
       const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
       const pinger = selfUrl.startsWith('https') ? require('https') : require('http');
-      setInterval(() => {
+      keepAliveTimer = setInterval(() => {
         pinger.get(`${selfUrl}/api/health`, () => {}).on('error', () => {});
       }, 10 * 60 * 1000); // ping every 10 min
     }
+
+    // ── Graceful shutdown ────────────────────────────────────────────────────
+    const shutdown = (signal) => {
+      logger.info(`${signal} received — shutting down gracefully`);
+      clearInterval(keepAliveTimer);
+      server.close(() => {
+        logger.info('HTTP server closed');
+        mongoose.connection.close(false).then(() => {
+          logger.info('MongoDB connection closed');
+          process.exit(0);
+        }).catch(() => process.exit(1));
+      });
+      // Force-exit after 10 s if something hangs
+      setTimeout(() => {
+        logger.error('Graceful shutdown timed out — forcing exit');
+        process.exit(1);
+      }, 10_000).unref();
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT',  () => shutdown('SIGINT'));
   });
 
   startMCPServer();

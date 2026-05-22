@@ -125,8 +125,11 @@ module.exports = (io, socket) => {
       }
 
       // ── Handle "back" ─────────────────────────────────────────
+      // IMPORTANT: use QUESTION_FLOW (all 133 IDs), not QUESTIONS
+      // (Phase 1 only). Using QUESTIONS breaks back navigation for all
+      // Phase 2+ questions because indexOf() returns -1.
       if (isPrev) {
-        const allIds = Object.keys(require('../data/questions').QUESTIONS);
+        const allIds = Object.keys(questionFlowService.getAllFlowIds());
         const currentIdx = allIds.indexOf(session.currentQuestion);
         if (currentIdx > 0) {
           session.currentQuestion = allIds[currentIdx - 1];

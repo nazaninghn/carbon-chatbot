@@ -96,8 +96,10 @@ router.post('/message', [
     }
 
     // Handle "back"
+    // IMPORTANT: use getAllFlowIds() (all 133 IDs), not QUESTIONS
+    // (Phase 1 only). indexOf() returns -1 for Phase 2+ questions otherwise.
     if (isPrev) {
-      const allIds = Object.keys(require('../data/questions').QUESTIONS);
+      const allIds = Object.keys(questionFlowService.getAllFlowIds());
       const currentIdx = allIds.indexOf(session.currentQuestion);
       if (currentIdx > 0) {
         session.currentQuestion = allIds[currentIdx - 1];

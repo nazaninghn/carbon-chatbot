@@ -1,9 +1,18 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function VoiceButton({ onResult, lang, hint, recordingText }) {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState('');
   const recognitionRef = useRef(null);
+
+  // Stop recognition and clean up when the component unmounts (e.g. user
+  // navigates away mid-recording). Without this, onresult / onerror callbacks
+  // fire on an unmounted component causing React state-update warnings.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   const toggle = () => {
     if (isRecording) {
@@ -25,8 +34,10 @@ export default function VoiceButton({ onResult, lang, hint, recordingText }) {
     recognition.continuous = false;
 
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      onResult(transcript);
+      // Guard against empty results (can happen on some browsers/OS combos)
+      const result = event.results?.[0]?.[0];
+      if (!result?.transcript) return;
+      onResult(result.transcript);
       setIsRecording(false);
     };
 
@@ -42,6 +53,7 @@ export default function VoiceButton({ onResult, lang, hint, recordingText }) {
       setTimeout(() => setError(''), 3000);
     };
 
+    // onend fires after onresult; set state here only (don't duplicate in onresult)
     recognition.onend = () => setIsRecording(false);
 
     recognitionRef.current = recognition;
