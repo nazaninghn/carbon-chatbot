@@ -87,8 +87,22 @@ const mdComponents = {
 export default function ChatMessage({ message, onOptionClick }) {
   const isUser = message.role === 'user';
   const raw    = cleanTokens(message.content);
-  const opts   = isUser ? [] : parseOptions(raw);
-  const body   = opts.length ? stripOptions(raw) : raw;
+
+  // The server always formats assistant messages as:
+  //   {llm_confirmation}\n\n---\n\n{question_with_numbered_options}
+  // Parsing options from the FULL string causes LLM confirmation numbered
+  // lists (e.g. "here is what's next: 1. Tax ID 2. Reporting Year") to be
+  // rendered as clickable option buttons for the WRONG question.
+  // Fix: split at the separator and parse/strip options ONLY from the
+  // question section (after ---).
+  const SEP         = '\n\n---\n\n';
+  const sepIdx      = raw.indexOf(SEP);
+  const confirmPart = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : '';
+  const questionPart = sepIdx !== -1 ? raw.slice(sepIdx + SEP.length).trim() : raw;
+
+  const opts         = isUser ? [] : parseOptions(questionPart);
+  const questionBody = opts.length ? stripOptions(questionPart) : questionPart;
+  const body         = confirmPart ? `${confirmPart}${SEP}${questionBody}` : questionBody;
 
   // User bubble
   if (isUser) {
