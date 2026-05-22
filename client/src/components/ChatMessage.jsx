@@ -1,14 +1,38 @@
 import ReactMarkdown from 'react-markdown';
 
+/**
+ * Parse numbered options ONLY when they form a contiguous sequential block
+ * starting at 1 with at least 2 items. This prevents arbitrary numbered lists
+ * in LLM responses (e.g. "1. First step in the process") from becoming
+ * clickable option buttons.
+ */
 function parseOptions(content) {
-  return content.split('\n').reduce((acc, line) => {
+  const lines = content.split('\n');
+  // Collect contiguous numbered-line blocks
+  const blocks = [];
+  let current = [];
+  for (const line of lines) {
     const m = line.match(/^(\d+)\.\s+(.+)/);
-    if (m) acc.push({ number: m[1], label: m[2].trim() });
-    return acc;
-  }, []);
+    if (m) {
+      current.push({ number: parseInt(m[1], 10), label: m[2].trim() });
+    } else {
+      if (current.length) { blocks.push(current); current = []; }
+    }
+  }
+  if (current.length) blocks.push(current);
+
+  // Accept the first block that: starts at 1, is sequential, has ≥2 items
+  for (const block of blocks) {
+    if (block.length >= 2 && block[0].number === 1 &&
+        block.every((item, i) => item.number === i + 1)) {
+      return block.map(item => ({ number: String(item.number), label: item.label }));
+    }
+  }
+  return [];
 }
 
 function stripOptions(content) {
+  // Strip ALL lines that look like numbered list items to avoid partial option display
   return content.split('\n').filter(l => !/^\d+\.\s+.+/.test(l)).join('\n').trim();
 }
 

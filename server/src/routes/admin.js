@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { requireAdmin } = require('../middleware/auth');
 const Knowledge = require('../models/Knowledge');
 const User = require('../models/User');
@@ -57,17 +58,16 @@ router.post('/knowledge/bulk', async (req, res) => {
       return res.status(400).json({ error: 'Items array is required' });
     }
 
-    const results = [];
-    for (const item of items) {
-      try {
-        const knowledge = await embeddingService.storeKnowledge(item.content, item.metadata);
-        results.push({ success: true, id: knowledge._id });
-      } catch (err) {
-        results.push({ success: false, error: err.message });
-      }
-    }
+    const settled = await Promise.allSettled(
+      items.map((item) => embeddingService.storeKnowledge(item.content, item.metadata))
+    );
+    const results = settled.map((r) =>
+      r.status === 'fulfilled'
+        ? { success: true, id: r.value._id }
+        : { success: false, error: r.reason?.message }
+    );
 
-    res.json({ results, total: items.length, success: results.filter(r => r.success).length });
+    res.json({ results, total: items.length, success: results.filter((r) => r.success).length });
   } catch (error) {
     logger.error('Bulk knowledge error:', error);
     res.status(500).json({ error: 'Failed to bulk add knowledge' });
@@ -100,6 +100,12 @@ router.get('/users', async (req, res) => {
 // Delete user
 router.delete('/users/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(403).json({ error: 'Admins cannot delete their own account' });
+    }
     await User.findByIdAndDelete(req.params.id);
     await Session.deleteMany({ userId: req.params.id });
     res.json({ message: 'User deleted' });
@@ -127,6 +133,9 @@ router.get('/sessions', async (req, res) => {
 // Delete session
 router.delete('/sessions/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
     await Session.findByIdAndDelete(req.params.id);
     res.json({ message: 'Session deleted' });
   } catch (error) {

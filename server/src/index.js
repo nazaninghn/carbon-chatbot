@@ -21,16 +21,24 @@ const app = express();
 const server = http.createServer(app);
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
-// In production, allow all origins (Vercel rewrites handle security)
-// In development, allow localhost
+// Restrict to known origins. Set CLIENT_URL env var for production.
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map((o) => o.trim())
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5174'];
+
 const corsOptions = {
-  origin: true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. curl, Postman, same-origin)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
 };
 
 // Socket.IO
 const io = new Server(server, {
-  cors: { origin: true, methods: ['GET', 'POST'] },
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────

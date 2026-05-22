@@ -110,7 +110,8 @@ router.post('/promote-admin', async (req, res) => {
     return res.status(403).json({ error: 'Not available in production' });
   }
   const { email, secret } = req.body;
-  if (secret !== 'carboniq-promote-2024') {
+  const promoteSecret = process.env.ADMIN_PROMOTE_SECRET || 'carboniq-promote-2024';
+  if (secret !== promoteSecret) {
     return res.status(403).json({ error: 'Invalid secret' });
   }
   try {

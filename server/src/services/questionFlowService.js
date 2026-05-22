@@ -52,21 +52,27 @@ const QUESTION_FLOW = {
   // Phase 3 - Scope 1
   '3-GIRIS': { phase: 3, block: '3', next: '3A-0', required: false },
   '3A-0': { phase: 3, block: '3A', next: '3A-1', required: true, conditional: true },
-  '3A-1': { phase: 3, block: '3A', next: '3A-2', required: false, showIf: (data) => data['3A-0'] === 'yes' },
+  '3A-1': { phase: 3, block: '3A', next: '3B-0', required: false, showIf: (data) => data['3A-0'] === 'yes' },
   '3B-0': { phase: 3, block: '3B', next: '3B-1', required: true, conditional: true },
-  '3B-1': { phase: 3, block: '3B', next: '3B-2', required: false, showIf: (data) => data['3B-0'] === 'yes' },
+  '3B-1': { phase: 3, block: '3B', next: '3C-0', required: false, showIf: (data) => data['3B-0'] === 'yes' },
   '3C-0': { phase: 3, block: '3C', next: '3C-1', required: false, showIf: (data) => ['A', 'B', 'C', 'D', 'E', 'F'].includes(data.naceSection) },
+  '3C-1': { phase: 3, block: '3C', next: '3D-0', required: false, showIf: (data) => ['A', 'B', 'C', 'D', 'E', 'F'].includes(data.naceSection) },
   '3D-0': { phase: 3, block: '3D', next: '3D-2', required: true },
+  '3D-2': { phase: 3, block: '3D', next: 'TY-1', required: true },
   'TY-1': { phase: 3, block: 'TY', next: '4-GIRIS', required: true },
   // Phase 4 - Scope 2
   '4-GIRIS': { phase: 4, block: '4', next: '4A-0', required: false },
   '4A-0': { phase: 4, block: '4A', next: '4A-1', required: true, conditional: true },
-  '4A-1': { phase: 4, block: '4A', next: '4A-2', required: false, showIf: (data) => data['4A-0'] === 'yes', repeatable: true },
+  '4A-1': { phase: 4, block: '4A', next: '4B-0', required: false, showIf: (data) => data['4A-0'] === 'yes', repeatable: true },
   '4B-0': { phase: 4, block: '4B', next: '4B-1', required: true, conditional: true },
+  '4B-1': { phase: 4, block: '4B', next: '4C-1', required: false, showIf: (data) => data['4B-0'] === 'yes' },
   '4C-1': { phase: 4, block: '4C', next: '5-GIRIS', required: true },
+  '5-GIRIS': { phase: 5, block: '5', next: 'K3C1-0', required: false },
   // Phase 5 - Scope 3 (simplified - 15 categories)
   'K3C1-0': { phase: 5, block: 'K3C1', next: 'K3C1-1', required: true },
+  'K3C1-1': { phase: 5, block: 'K3C1', next: 'K3C2-0', required: false },
   'K3C2-0': { phase: 5, block: 'K3C2', next: 'K3C2-1', required: true },
+  'K3C2-1': { phase: 5, block: 'K3C2', next: 'K3C3-INFO', required: false },
   'K3C3-INFO': { phase: 5, block: 'K3C3', next: 'K3C4-0', required: true },
   'K3C4-0': { phase: 5, block: 'K3C4', next: 'K3C5-0', required: true },
   'K3C5-0': { phase: 5, block: 'K3C5', next: 'K3C6-0', required: true },
@@ -110,7 +116,10 @@ class QuestionFlowService {
     let nextQuestion = QUESTION_FLOW[nextId];
 
     // Check conditional logic - skip questions that shouldn't show
+    const visited = new Set();
     while (nextQuestion && nextQuestion.showIf && !nextQuestion.showIf(reportData)) {
+      if (visited.has(nextId)) break; // cycle guard
+      visited.add(nextId);
       nextId = nextQuestion.next;
       nextQuestion = nextId ? QUESTION_FLOW[nextId] : null;
     }

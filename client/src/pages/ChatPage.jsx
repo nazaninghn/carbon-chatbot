@@ -626,7 +626,15 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
     </div>
   );
 
-  // ── MAIN ─────────────────────────────────────────────────────
+  // ── Export modal variables (hoisted from JSX to avoid IIFE) ───
+  const _meta    = exportData?.summary?.reportMeta       || {};
+  const _ems     = exportData?.summary?.emissions        || {};
+  const _compl   = exportData?.summary?.dataCompleteness || {};
+  const _rd      = exportData?.summary?.reportData       || {};
+  const _labels  = Q_LABELS[lang] || Q_LABELS.tr;
+  const _entries = Object.entries(_rd).filter(([, v]) => v && String(v).trim());
+
+  // ── MAIN RENDER ────────────────────────────────────────────────
   return (
     <div className="relative h-screen overflow-hidden">
 
@@ -889,15 +897,8 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
         </main>
       </div>
 
-      {/* Export modal — inlined to keep setShowExport directly in scope */}
-      {showExport && exportData && (() => {
-        const _meta    = exportData?.summary?.reportMeta       || {};
-        const _ems     = exportData?.summary?.emissions        || {};
-        const _compl   = exportData?.summary?.dataCompleteness || {};
-        const _rd      = exportData?.summary?.reportData       || {};
-        const _labels  = Q_LABELS[lang] || Q_LABELS.tr;
-        const _entries = Object.entries(_rd).filter(([, v]) => v && String(v).trim());
-        return (
+      {/* Export modal */}
+      {showExport && exportData && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             style={{ background: 'rgba(52,78,65,0.5)', backdropFilter: 'blur(8px)' }}
@@ -1049,8 +1050,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
               </div>
             </div>
           </div>
-        );
-      })()}
+      )}
     </div>
   );
 }

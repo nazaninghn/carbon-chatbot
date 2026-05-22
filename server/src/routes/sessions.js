@@ -4,14 +4,23 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
-// Get all sessions for user
+// Get all sessions for user (paginated)
 router.get('/', async (req, res) => {
   try {
-    const sessions = await Session.find({ userId: req.user._id })
-      .select('title status currentPhase currentQuestion emissions createdAt updatedAt')
-      .sort({ updatedAt: -1 });
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 20);
+    const skip  = (page - 1) * limit;
 
-    res.json({ sessions });
+    const [sessions, total] = await Promise.all([
+      Session.find({ userId: req.user._id })
+        .select('title status currentPhase currentQuestion emissions createdAt updatedAt')
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Session.countDocuments({ userId: req.user._id }),
+    ]);
+
+    res.json({ sessions, total, page, pages: Math.ceil(total / limit) });
   } catch (error) {
     logger.error('Get sessions error:', error);
     res.status(500).json({ error: 'Failed to fetch sessions' });
@@ -35,13 +44,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Get single session with messages
+// Get single session with messages (last 100 messages by default)
 router.get('/:id', async (req, res) => {
   try {
-    const session = await Session.findOne({
-      _id: req.params.id,
-      userId: req.user._id,
-    });
+    const session = await Session.findOne(
+      { _id: req.params.id, userId: req.user._id },
+      // Slice messages array to last 100 to avoid huge payloads for completed sessions
+      { messages: { $slice: -100 }, reportData: 1, currentPhase: 1, currentQuestion: 1,
+        title: 1, status: 1, emissions: 1, assumptions: 1, exclusions: 1, createdAt: 1, updatedAt: 1 }
+    );
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });

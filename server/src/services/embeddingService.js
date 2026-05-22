@@ -83,8 +83,8 @@ class EmbeddingService {
       if (category) filter['metadata.category'] = category;
       if (scope) filter['metadata.scope'] = scope;
 
-      // Get all matching documents and compute cosine similarity
-      const documents = await Knowledge.find(filter).lean();
+      // Get matching documents and compute cosine similarity (cap at 500 to avoid OOM)
+      const documents = await Knowledge.find(filter).limit(500).lean();
 
       const results = documents
         .map((doc) => ({
@@ -153,7 +153,7 @@ class EmbeddingService {
       return await Knowledge.find({
         'metadata.questionId': questionId,
         isActive: true,
-      }).lean();
+      }).limit(20).lean();
     } catch (error) {
       logger.error('Get question knowledge error:', error);
       return [];
