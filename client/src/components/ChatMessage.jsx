@@ -37,7 +37,10 @@ function stripOptions(content) {
 }
 
 function cleanTokens(text) {
-  return (text || '').replace(/\[NEXT_QUESTION\]/g, '').replace(/\[PREV_QUESTION\]/g, '').trim();
+  // Guard: if content is accidentally an object (e.g. a socket event passed wholesale
+  // instead of event.content), convert to string so we don't crash or show [object Object].
+  const str = typeof text === 'string' ? text : (text == null ? '' : JSON.stringify(text));
+  return str.replace(/\[NEXT_QUESTION\]/g, '').replace(/\[PREV_QUESTION\]/g, '').trim();
 }
 
 function StatusPara({ children }) {
@@ -112,7 +115,7 @@ export default function ChatMessage({ message, onOptionClick }) {
           className="max-w-[75%] text-sm px-4 py-3 rounded-2xl rounded-tr-sm leading-relaxed"
           style={{ background: '#344E41', color: 'white' }}
         >
-          {message.content}
+          {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
           {message.file && (
             <span className="flex items-center gap-1.5 mt-1.5 text-xs" style={{ color: 'rgba(163,177,138,0.7)' }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

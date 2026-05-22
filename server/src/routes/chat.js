@@ -150,8 +150,15 @@ router.post('/start', [
     const session = await Session.findOne({ _id: sessionId, userId });
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
+    // Always reset to Q1 — /chat/start means "start from the beginning".
+    // Without this, calling /start on a session that was previously at A2
+    // would return questionNumber=2 and validate subsequent answers as VKN,
+    // rejecting valid company names.
+    session.currentQuestion = 'A1';
+    session.currentPhase    = 1;
+
     // Welcome message + first question
-    const welcome = questionFlowService.getWelcomeMessage(lang);
+    const welcome  = questionFlowService.getWelcomeMessage(lang);
     const firstQ   = questionFlowService.formatQuestionMessage('A1', lang);
     const fullMsg  = firstQ ? `${welcome}\n\n---\n\n${firstQ}` : welcome;
 
@@ -162,15 +169,15 @@ router.post('/start', [
     });
     await session.save();
 
-    const questionNumber = questionFlowService.getQuestionNumber(session.currentQuestion);
-    const progress = questionFlowService.getProgress(session.currentQuestion);
+    const questionNumber = questionFlowService.getQuestionNumber('A1'); // always 1
+    const progress       = questionFlowService.getProgress('A1');
 
     res.json({
       message: fullMsg,
       progress,
       questionNumber,
-      phase: session.currentPhase,
-      currentQuestion: session.currentQuestion,
+      phase: 1,
+      currentQuestion: 'A1',
     });
   } catch (error) {
     logger.error('Chat start error:', error);
