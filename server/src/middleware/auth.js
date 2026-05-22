@@ -34,6 +34,11 @@ const authenticateToken = async (req, res, next) => {
 };
 
 const requireAdmin = (req, res, next) => {
+  // Guard against middleware ordering errors where authenticateToken
+  // was not applied before requireAdmin, which would cause a crash.
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
   }

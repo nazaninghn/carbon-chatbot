@@ -10,7 +10,7 @@ const PANEL_USER = process.env.ADMIN_PANEL_USER || 'admin';
 const PANEL_PASS = process.env.ADMIN_PANEL_PASS || 'Admin@2024';
 
 function checkAuth(req, res, next) {
-  if (req.query.key === PANEL_KEY) return next();
+  // Basic Auth only — no query-string key (would appear in server logs / browser history)
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Basic ')) {
     const [user, pass] = Buffer.from(auth.slice(6), 'base64').toString().split(':');
@@ -20,6 +20,14 @@ function checkAuth(req, res, next) {
   res.status(401).send('Authentication required');
 }
 router.use(checkAuth);
+
+// Warn in production if default credentials are still in use
+if (process.env.NODE_ENV === 'production') {
+  const logger = require('../utils/logger');
+  if (!process.env.ADMIN_PANEL_USER || !process.env.ADMIN_PANEL_PASS) {
+    logger.warn('⚠ adminPanel: ADMIN_PANEL_USER / ADMIN_PANEL_PASS are not set — using insecure defaults!');
+  }
+}
 
 // ── Question labels ───────────────────────────────────────────────────────────
 const Q_LABELS = {
@@ -301,7 +309,7 @@ router.get('/users/:id', async (req, res) => {
             <div class="pbar" style="width:120px"><div class="pfill" style="width:${pct}%"></div></div>
             <span style="font-size:12px;color:#588157;font-weight:700">${answers}/133 (${pct}%)</span>
             <span class="badge ${s.status === 'active' ? 'ba' : ''}">${s.status}</span>
-            <a href="/admin/sessions/${s._id}/delete" class="del" onclick="return confirm('Sil?')">✕</a>
+            <form method="POST" action="/admin/sessions/${s._id}/delete" style="display:inline" onsubmit="return confirm('Sil?')"><button type="submit" class="del" style="background:none;border:none;cursor:pointer;padding:0">✕</button></form>
           </div>
         </div>
         <div class="journey-body">
@@ -469,7 +477,12 @@ router.get('/sessions/:id', async (req, res) => {
 });
 
 // ── Delete routes (POST — prevents CSRF via link prefetch / GET requests) ─────
+const mongoose = require('mongoose');
+
 router.post('/sessions/:id/delete', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).send('Invalid session ID');
+  }
   try {
     await Session.findByIdAndDelete(req.params.id);
     res.redirect('/admin');
@@ -478,6 +491,9 @@ router.post('/sessions/:id/delete', async (req, res) => {
   }
 });
 router.post('/users/:id/delete', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).send('Invalid user ID');
+  }
   try {
     await User.findByIdAndDelete(req.params.id);
     await Session.deleteMany({ userId: req.params.id });
@@ -489,7 +505,12 @@ router.post('/users/:id/delete', async (req, res) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function esc(str) {
-  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return (str || '')
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#x27;');
 }
 
 function timeAgo(date) {

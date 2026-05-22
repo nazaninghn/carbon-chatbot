@@ -51,11 +51,15 @@ router.post('/knowledge', async (req, res) => {
 });
 
 // Bulk add knowledge
+const BULK_MAX = 200; // cap concurrent embedding API calls + DB writes
 router.post('/knowledge/bulk', async (req, res) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Items array is required' });
+    }
+    if (items.length > BULK_MAX) {
+      return res.status(400).json({ error: `Maximum ${BULK_MAX} items per bulk request` });
     }
 
     const settled = await Promise.allSettled(
@@ -78,7 +82,16 @@ router.post('/knowledge/bulk', async (req, res) => {
 router.post('/knowledge/search', async (req, res) => {
   try {
     const { query, options } = req.body;
-    const results = await embeddingService.search(query, options || {});
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ error: 'query is required and must be a non-empty string' });
+    }
+    // Whitelist known option fields to prevent passing arbitrary objects
+    // to the embedding service (e.g. {limit: 100000} memory exhaustion).
+    const safeOptions = {};
+    if (typeof options?.limit  === 'number') safeOptions.limit    = Math.min(options.limit, 50);
+    if (typeof options?.phase  === 'number') safeOptions.phase    = options.phase;
+    if (typeof options?.minScore === 'number') safeOptions.minScore = options.minScore;
+    const results = await embeddingService.search(query.trim(), safeOptions);
     res.json({ results });
   } catch (error) {
     logger.error('Knowledge search error:', error);
@@ -115,15 +128,25 @@ router.delete('/users/:id', async (req, res) => {
 });
 
 // List all sessions
+// Uses aggregation to return a message COUNT without loading the full
+// messages array into Node.js memory (each session can have hundreds of
+// large messages — loading all of them just to compute .length is an OOM risk).
 router.get('/sessions', async (req, res) => {
   try {
-    const sessions = await Session.find()
-      .select('title status currentPhase currentQuestion userId messages createdAt updatedAt')
-      .sort({ updatedAt: -1 })
-      .lean();
-    // Add message count
-    const result = sessions.map(s => ({ ...s, messages: s.messages?.length || 0 }));
-    res.json({ sessions: result });
+    const sessions = await Session.aggregate([
+      { $sort: { updatedAt: -1 } },
+      { $project: {
+        title:           1,
+        status:          1,
+        currentPhase:    1,
+        currentQuestion: 1,
+        userId:          1,
+        createdAt:       1,
+        updatedAt:       1,
+        messages: { $size: { $ifNull: ['$messages', []] } },
+      }},
+    ]);
+    res.json({ sessions });
   } catch (error) {
     logger.error('List sessions error:', error);
     res.status(500).json({ error: 'Failed' });
