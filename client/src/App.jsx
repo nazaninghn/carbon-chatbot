@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ChatPage from './pages/ChatPage';
 import AdminPage from './pages/AdminPage';
+import AuthPage from './pages/AuthPage';
 
 // Demo credentials — override via VITE_DEMO_EMAIL / VITE_DEMO_PASS in .env
 const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || 'demo@carboniq.app';
@@ -88,6 +89,20 @@ export default function App() {
     );
   }
 
+  // No auth after retries exhausted → show real login/register page
+  if (!auth) {
+    return (
+      <AuthPage
+        lang={lang}
+        setLang={setLang}
+        onAuth={(result) => {
+          localStorage.setItem('ciq_token', result.token);
+          setAuth(result);
+        }}
+      />
+    );
+  }
+
   if (view === 'admin' && auth?.user?.role === 'admin') {
     return <AdminPage auth={auth} lang={lang} onBack={() => setView('chat')} />;
   }
@@ -96,7 +111,12 @@ export default function App() {
     <ChatPage
       lang={lang} setLang={setLang}
       auth={auth}
-      onLogout={() => { localStorage.removeItem('ciq_token'); localStorage.removeItem('ciq_session'); setAuth(null); setReady(false); tryConnect(); }}
+      onLogout={() => {
+        localStorage.removeItem('ciq_token');
+        localStorage.removeItem('ciq_session');
+        setAuth(null);
+        setView('chat');
+      }}
       onAdmin={() => setView('admin')}
     />
   );

@@ -38,7 +38,7 @@ router.post('/register', [
     logger.info(`New user registered: ${email}`);
     res.status(201).json({
       token,
-      user: { id: user._id, email: user.email, name: user.name, company: user.company },
+      user: { id: user._id, email: user.email, name: user.name, company: user.company, role: user.role },
     });
   } catch (error) {
     logger.error('Registration error:', error);
@@ -91,7 +91,7 @@ router.post('/login', [
     logger.info(`User logged in: ${email}`);
     res.json({
       token,
-      user: { id: user._id, email: user.email, name: user.name, company: user.company },
+      user: { id: user._id, email: user.email, name: user.name, company: user.company, role: user.role },
     });
   } catch (error) {
     logger.error('Login error:', error);

@@ -132,252 +132,16 @@ ${assumptions.map(a => `<div class="assume">⚠ ${typeof a === 'string' ? a : (a
 </body></html>`;
 }
 
-// Question ID → human label map for report preview
-const Q_LABELS = {
-  tr: {
-    A1: 'Şirket Adı', A2: 'Vergi No (VKN)', A3: 'Ülke / Şehir', A4: 'Raporlama Yılı',
-    A5: 'Hazırlayan', A6: 'Rapor Amacı', A7: 'Çalışan Sayısı', A8: 'Ciro (TL)',
-    B1: 'Baz Yıl', B2: 'Baz Yıl Emisyonu', B3: 'Baz Yıl Değişim',
-    C1: 'Sektör', C2: 'Ana Faaliyet', C3: 'Tesis Sayısı',
-    D1: 'Sınır Yaklaşımı', D2: 'EF Veritabanı', D3: 'Kapsam 3 Yaklaşımı', D4: 'Doğrulama',
-  },
-  en: {
-    A1: 'Company Name', A2: 'Tax ID (VKN)', A3: 'Country / City', A4: 'Reporting Year',
-    A5: 'Prepared By', A6: 'Report Purpose', A7: 'Employee Count', A8: 'Revenue',
-    B1: 'Base Year', B2: 'Base Year Emissions', B3: 'Base Year Change',
-    C1: 'Sector', C2: 'Main Activity', C3: 'Facility Count',
-    D1: 'Boundary Approach', D2: 'EF Database', D3: 'Scope 3 Approach', D4: 'Verification',
-  },
-};
-
-
-export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
-  const t = translations[lang];
-
-  const [messages, setMessages]         = useState([]);
-  const [input, setInput]               = useState('');
-  const [isTyping, setIsTyping]         = useState(false);
-  const [ready, setReady]               = useState(false);
-  const [started, setStarted]           = useState(false);
-  const [restoring, setRestoring]       = useState(true);
-  const [currentPhase, setCurrentPhase] = useState(1);
-  const [questionNumber, setQuestionNumber] = useState(0);
-  const [sidebarOpen, setSidebarOpen]   = useState(false);
-  const [sidebarTab, setSidebarTab]     = useState('phases');
-  const [sessions, setSessions]         = useState([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [exportLoading, setExportLoading] = useState(false);
-  const [exportData, setExportData]     = useState(null);
-  const [showExport, setShowExport]     = useState(false);
-  const [exportTab, setExportTab]       = useState('summary');
-
-  const messagesEndRef = useRef(null);
-  const inputRef       = useRef(null);
-  const sessionRef     = useRef(null);
-  const tokenRef       = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
-
-  // ── Init: set token from auth prop, then restore session ──
-  useEffect(() => {
-    if (auth?.token) {
-      tokenRef.current = auth.token;
-      const savedSession = localStorage.getItem('ciq_session');
-      if (savedSession) {
-        restoreSession(auth.token, savedSession);
-      } else {
-        setRestoring(false);
-      }
-    } else {
-      setRestoring(false);
-    }
-  }, [auth]);
-
-  const applySession = useCallback((token, sessionId, session) => {
-    tokenRef.current   = token;
-    sessionRef.current = sessionId;
-    if (session.messages?.length) {
-      setMessages(session.messages.map(m => ({
-        role:    m.role,
-        content: m.content,
-        ts:      new Date(m.timestamp || m.createdAt || Date.now()).getTime(),
-      })));
-    }
-    if (session.currentPhase) setCurrentPhase(session.currentPhase);
-    const qNum = session.messages?.filter(m => m.role === 'user').length || 0;
-    setQuestionNumber(qNum);
-    setReady(true);
-    setStarted(true);
-  }, []);
-
-  const restoreSession = useCallback(async (token, sessionId) => {
-    setRestoring(true);
-    try {
-      const me = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
-      if (!me.ok) throw new Error('invalid token');
-      const res = await fetch(`/api/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error('session not found');
-      const data = await res.json();
-      applySession(token, sessionId, data.session || data);
-    } catch {
-      localStorage.removeItem('ciq_token');
-      localStorage.removeItem('ciq_session');
-    } finally {
-      setRestoring(false);
-    }
-  }, [applySession]);
-
-  const initChat = useCallback(async () => {
-    setIsTyping(true);
-    try {
-      const token = tokenRef.current;
-      if (!token) throw new Error('no token');
-
-      const sess = await fetch('/api/sessions', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: `Rapor ${new Date().toLocaleDateString('tr-TR')}` }),
-      });
-      if (!sess.ok) throw new Error('session');
-      sessionRef.current = (await sess.json()).session._id;
-      localStorage.setItem('ciq_session', sessionRef.current);
-
-      const start = await fetch('/api/chat/start', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId: sessionRef.current, lang }),
-      });
-      if (!start.ok) throw new Error('start');
-      const data = await start.json();
-
-      if (data.message)        setMessages([{ role: 'assistant', content: data.message, ts: Date.now() }]);
-      if (data.phase)          setCurrentPhase(data.phase);
-      if (data.questionNumber) setQuestionNumber(data.questionNumber);
-      setReady(true);
-      setStarted(true);
-    } catch (err) {
-      console.error(err);
-      setMessages([{ role: 'assistant', content: t.chat.connectionError, ts: Date.now() }]);
-      setStarted(true);
-    } finally {
-      setIsTyping(false);
-    }
-  }, [lang, t]);
-
-  const sendMessage = useCallback(async (text) => {
-    if (!text?.trim() || isTyping || !ready) return;
-    setMessages(p => [...p, { role: 'user', content: text.trim(), ts: Date.now() }]);
-    setInput('');
-    setIsTyping(true);
-    try {
-      const res  = await fetch('/api/chat/message', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenRef.current}` },
-        body: JSON.stringify({ message: text.trim(), sessionId: sessionRef.current, lang }),
-      });
-      const data = await res.json();
-      if (data.message) {
-        setMessages(p => [...p, { role: 'assistant', content: data.message, ts: Date.now() }]);
-        if (data.phase)          setCurrentPhase(data.phase);
-        if (data.questionNumber) setQuestionNumber(data.questionNumber);
-      } else throw new Error('no message');
-    } catch {
-      setMessages(p => [...p, { role: 'assistant', content: t.chat.errorRetry, ts: Date.now() }]);
-    } finally {
-      setIsTyping(false);
-      inputRef.current?.focus();
-    }
-  }, [isTyping, ready, lang, t]);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!started) { initChat(); return; }
-    sendMessage(input);
-  };
-
-  // ── Session history ──
-  const loadSessions = useCallback(async () => {
-    if (!tokenRef.current) return;
-    setSessionsLoading(true);
-    try {
-      const res  = await fetch('/api/sessions', { headers: { Authorization: `Bearer ${tokenRef.current}` } });
-      const data = await res.json();
-      setSessions(data.sessions || []);
-    } catch { setSessions([]); }
-    finally  { setSessionsLoading(false); }
-  }, []);
-
-  const switchSession = useCallback(async (sessionId) => {
-    if (!tokenRef.current) return;
-    setIsTyping(true);
-    try {
-      const res  = await fetch(`/api/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${tokenRef.current}` } });
-      const data = await res.json();
-      localStorage.setItem('ciq_session', sessionId);
-      applySession(tokenRef.current, sessionId, data.session || data);
-      setSidebarTab('phases');
-      setSidebarOpen(false);
-    } catch (err) { console.error(err); }
-    finally       { setIsTyping(false); }
-  }, [applySession]);
-
-  const deleteSession = useCallback(async (e, sessionId) => {
-    e.stopPropagation();
-    if (!tokenRef.current) return;
-    try {
-      await fetch(`/api/sessions/${sessionId}`, {
-        method:  'DELETE',
-        headers: { Authorization: `Bearer ${tokenRef.current}` },
-      });
-      setSessions(p => p.filter(s => s._id !== sessionId));
-      if (sessionRef.current === sessionId) {
-        localStorage.removeItem('ciq_session');
-        sessionRef.current = null;
-        setMessages([]);
-        setStarted(false);
-        setReady(false);
-        setCurrentPhase(1);
-        setQuestionNumber(0);
-      }
-    } catch (err) { console.error(err); }
-  }, []);
-
-  // ── Export ──
-  const openExport = useCallback(async () => {
-    if (!tokenRef.current || !sessionRef.current) return;
-    setExportLoading(true);
-    try {
-      const [sumRes, fullRes] = await Promise.all([
-        fetch(`/api/sessions/${sessionRef.current}/summary`, { headers: { Authorization: `Bearer ${tokenRef.current}` } }),
-        fetch(`/api/sessions/${sessionRef.current}`,         { headers: { Authorization: `Bearer ${tokenRef.current}` } }),
-      ]);
-      const summary = await sumRes.json();
-      const full    = await fullRes.json();
-      setExportData({ summary, session: full.session || full });
-      setShowExport(true);
-    } catch (err) { console.error(err); }
-    finally       { setExportLoading(false); }
-  }, []);
-
-  const printReport = useCallback(() => {
-    const w = window.open('', '_blank');
-    w.document.write(buildReportHTML(lang, exportData));
-    w.document.close();
-  }, [lang, exportData]);
-
-  // ── Progress ──
-  const progressPct = TOTAL_QUESTIONS ? Math.round((questionNumber / TOTAL_QUESTIONS) * 100) : 0;
-  const phaseProgressPct = (() => {
-    const ph   = PHASES.find(p => p.id === currentPhase);
-    if (!ph) return 0;
-    const done = questionNumber - PHASE_OFFSETS[currentPhase];
-    return Math.min(100, Math.round((Math.max(0, done) / ph.count) * 100));
-  })();
-
-  // ── SIDEBAR ───────────────────────────────────────────────────
-  const SidebarContent = ({ onClose }) => (
+// ── SidebarContent — defined at MODULE level to prevent remounting on every
+//    ChatPage re-render (defining a component inside another component creates
+//    a new reference each render, causing React to unmount/remount it).
+function SidebarContent({
+  onClose, lang, setLang, auth, onAdmin, onLogout, t,
+  progressPct, phaseProgressPct, questionNumber, currentPhase,
+  sidebarTab, setSidebarTab, loadSessions, sessionsLoading, sessions,
+  sessionRef, switchSession, deleteSession, initChat, setSidebarOpen,
+}) {
+  return (
     <div
       className="flex flex-col h-full"
       style={{
@@ -625,6 +389,259 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
       </div>
     </div>
   );
+}
+
+// Question ID → human label map for report preview
+const Q_LABELS = {
+  tr: {
+    A1: 'Şirket Adı', A2: 'Vergi No (VKN)', A3: 'Ülke / Şehir', A4: 'Raporlama Yılı',
+    A5: 'Hazırlayan', A6: 'Rapor Amacı', A7: 'Çalışan Sayısı', A8: 'Ciro (TL)',
+    B1: 'Baz Yıl', B2: 'Baz Yıl Emisyonu', B3: 'Baz Yıl Değişim',
+    C1: 'Sektör', C2: 'Ana Faaliyet', C3: 'Tesis Sayısı',
+    D1: 'Sınır Yaklaşımı', D2: 'EF Veritabanı', D3: 'Kapsam 3 Yaklaşımı', D4: 'Doğrulama',
+  },
+  en: {
+    A1: 'Company Name', A2: 'Tax ID (VKN)', A3: 'Country / City', A4: 'Reporting Year',
+    A5: 'Prepared By', A6: 'Report Purpose', A7: 'Employee Count', A8: 'Revenue',
+    B1: 'Base Year', B2: 'Base Year Emissions', B3: 'Base Year Change',
+    C1: 'Sector', C2: 'Main Activity', C3: 'Facility Count',
+    D1: 'Boundary Approach', D2: 'EF Database', D3: 'Scope 3 Approach', D4: 'Verification',
+  },
+};
+
+
+export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
+  const t = translations[lang];
+
+  const [messages, setMessages]         = useState([]);
+  const [input, setInput]               = useState('');
+  const [isTyping, setIsTyping]         = useState(false);
+  const [ready, setReady]               = useState(false);
+  const [started, setStarted]           = useState(false);
+  const [restoring, setRestoring]       = useState(true);
+  const [currentPhase, setCurrentPhase] = useState(1);
+  const [questionNumber, setQuestionNumber] = useState(0);
+  const [sidebarOpen, setSidebarOpen]   = useState(false);
+  const [sidebarTab, setSidebarTab]     = useState('phases');
+  const [sessions, setSessions]         = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportData, setExportData]     = useState(null);
+  const [showExport, setShowExport]     = useState(false);
+  const [exportTab, setExportTab]       = useState('summary');
+
+  const messagesEndRef = useRef(null);
+  const inputRef       = useRef(null);
+  const sessionRef     = useRef(null);
+  const tokenRef       = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
+
+  // ── Init: set token from auth prop, then restore session ──
+  useEffect(() => {
+    if (auth?.token) {
+      tokenRef.current = auth.token;
+      const savedSession = localStorage.getItem('ciq_session');
+      if (savedSession) {
+        restoreSession(auth.token, savedSession);
+      } else {
+        setRestoring(false);
+      }
+    } else {
+      setRestoring(false);
+    }
+  }, [auth]);
+
+  const applySession = useCallback((token, sessionId, session) => {
+    tokenRef.current   = token;
+    sessionRef.current = sessionId;
+    if (session.messages?.length) {
+      setMessages(session.messages.map(m => ({
+        role:    m.role,
+        content: m.content,
+        ts:      new Date(m.timestamp || m.createdAt || Date.now()).getTime(),
+      })));
+    }
+    if (session.currentPhase) setCurrentPhase(session.currentPhase);
+    const qNum = session.messages?.filter(m => m.role === 'user').length || 0;
+    setQuestionNumber(qNum);
+    setReady(true);
+    setStarted(true);
+  }, []);
+
+  const restoreSession = useCallback(async (token, sessionId) => {
+    setRestoring(true);
+    try {
+      const me = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+      if (!me.ok) throw new Error('invalid token');
+      const res = await fetch(`/api/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('session not found');
+      const data = await res.json();
+      applySession(token, sessionId, data.session || data);
+    } catch {
+      localStorage.removeItem('ciq_token');
+      localStorage.removeItem('ciq_session');
+    } finally {
+      setRestoring(false);
+    }
+  }, [applySession]);
+
+  const initChat = useCallback(async () => {
+    setIsTyping(true);
+    try {
+      const token = tokenRef.current;
+      if (!token) throw new Error('no token');
+
+      const sess = await fetch('/api/sessions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: `Rapor ${new Date().toLocaleDateString('tr-TR')}` }),
+      });
+      if (!sess.ok) throw new Error('session');
+      sessionRef.current = (await sess.json()).session._id;
+      localStorage.setItem('ciq_session', sessionRef.current);
+
+      const start = await fetch('/api/chat/start', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sessionId: sessionRef.current, lang }),
+      });
+      if (!start.ok) throw new Error('start');
+      const data = await start.json();
+
+      if (data.message)        setMessages([{ role: 'assistant', content: data.message, ts: Date.now() }]);
+      if (data.phase)          setCurrentPhase(data.phase);
+      if (data.questionNumber) setQuestionNumber(data.questionNumber);
+      setReady(true);
+      setStarted(true);
+    } catch (err) {
+      console.error(err);
+      setMessages([{ role: 'assistant', content: t.chat.connectionError, ts: Date.now() }]);
+      setStarted(true);
+    } finally {
+      setIsTyping(false);
+    }
+  }, [lang, t]);
+
+  const sendMessage = useCallback(async (text) => {
+    if (!text?.trim() || isTyping || !ready) return;
+    setMessages(p => [...p, { role: 'user', content: text.trim(), ts: Date.now() }]);
+    setInput('');
+    setIsTyping(true);
+    try {
+      const res  = await fetch('/api/chat/message', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenRef.current}` },
+        body: JSON.stringify({ message: text.trim(), sessionId: sessionRef.current, lang }),
+      });
+      const data = await res.json();
+      if (data.message) {
+        setMessages(p => [...p, { role: 'assistant', content: data.message, ts: Date.now() }]);
+        if (data.phase)          setCurrentPhase(data.phase);
+        if (data.questionNumber) setQuestionNumber(data.questionNumber);
+      } else throw new Error('no message');
+    } catch {
+      setMessages(p => [...p, { role: 'assistant', content: t.chat.errorRetry, ts: Date.now() }]);
+    } finally {
+      setIsTyping(false);
+      inputRef.current?.focus();
+    }
+  }, [isTyping, ready, lang, t]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!started) { initChat(); return; }
+    sendMessage(input);
+  };
+
+  // ── Session history ──
+  const loadSessions = useCallback(async () => {
+    if (!tokenRef.current) return;
+    setSessionsLoading(true);
+    try {
+      const res  = await fetch('/api/sessions', { headers: { Authorization: `Bearer ${tokenRef.current}` } });
+      const data = await res.json();
+      setSessions(data.sessions || []);
+    } catch { setSessions([]); }
+    finally  { setSessionsLoading(false); }
+  }, []);
+
+  const switchSession = useCallback(async (sessionId) => {
+    if (!tokenRef.current) return;
+    setIsTyping(true);
+    try {
+      const res  = await fetch(`/api/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${tokenRef.current}` } });
+      const data = await res.json();
+      localStorage.setItem('ciq_session', sessionId);
+      applySession(tokenRef.current, sessionId, data.session || data);
+      setSidebarTab('phases');
+      setSidebarOpen(false);
+    } catch (err) { console.error(err); }
+    finally       { setIsTyping(false); }
+  }, [applySession]);
+
+  const deleteSession = useCallback(async (e, sessionId) => {
+    e.stopPropagation();
+    if (!tokenRef.current) return;
+    try {
+      await fetch(`/api/sessions/${sessionId}`, {
+        method:  'DELETE',
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
+      });
+      setSessions(p => p.filter(s => s._id !== sessionId));
+      if (sessionRef.current === sessionId) {
+        localStorage.removeItem('ciq_session');
+        sessionRef.current = null;
+        setMessages([]);
+        setStarted(false);
+        setReady(false);
+        setCurrentPhase(1);
+        setQuestionNumber(0);
+      }
+    } catch (err) { console.error(err); }
+  }, []);
+
+  // ── Export ──
+  const openExport = useCallback(async () => {
+    if (!tokenRef.current || !sessionRef.current) return;
+    setExportLoading(true);
+    try {
+      const [sumRes, fullRes] = await Promise.all([
+        fetch(`/api/sessions/${sessionRef.current}/summary`, { headers: { Authorization: `Bearer ${tokenRef.current}` } }),
+        fetch(`/api/sessions/${sessionRef.current}`,         { headers: { Authorization: `Bearer ${tokenRef.current}` } }),
+      ]);
+      const summary = await sumRes.json();
+      const full    = await fullRes.json();
+      setExportData({ summary, session: full.session || full });
+      setShowExport(true);
+    } catch (err) { console.error(err); }
+    finally       { setExportLoading(false); }
+  }, []);
+
+  const printReport = useCallback(() => {
+    const w = window.open('', '_blank');
+    w.document.write(buildReportHTML(lang, exportData));
+    w.document.close();
+  }, [lang, exportData]);
+
+  // ── Progress ──
+  const progressPct = TOTAL_QUESTIONS ? Math.round((questionNumber / TOTAL_QUESTIONS) * 100) : 0;
+  const phaseProgressPct = (() => {
+    const ph   = PHASES.find(p => p.id === currentPhase);
+    if (!ph) return 0;
+    const done = questionNumber - PHASE_OFFSETS[currentPhase];
+    return Math.min(100, Math.round((Math.max(0, done) / ph.count) * 100));
+  })();
+
+  // ── Shared sidebar props (avoids repeating 20 props twice in JSX) ────────────
+  const sidebarProps = {
+    lang, setLang, auth, onAdmin, onLogout, t,
+    progressPct, phaseProgressPct, questionNumber, currentPhase,
+    sidebarTab, setSidebarTab, loadSessions, sessionsLoading, sessions,
+    sessionRef, switchSession, deleteSession, initChat, setSidebarOpen,
+  };
 
   // ── Export modal variables (hoisted from JSX to avoid IIFE) ───
   const _meta    = exportData?.summary?.reportMeta       || {};
@@ -649,7 +666,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
 
         {/* Desktop sidebar */}
         <aside className="hidden lg:flex w-64 xl:w-72 flex-shrink-0">
-          <SidebarContent />
+          <SidebarContent {...sidebarProps} />
         </aside>
 
         {/* Mobile sidebar overlay */}
@@ -661,7 +678,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
               onClick={() => setSidebarOpen(false)}
             />
             <div className="relative w-72 h-full shadow-2xl">
-              <SidebarContent onClose={() => setSidebarOpen(false)} />
+              <SidebarContent {...sidebarProps} onClose={() => setSidebarOpen(false)} />
             </div>
           </div>
         )}
