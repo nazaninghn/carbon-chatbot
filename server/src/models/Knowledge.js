@@ -34,10 +34,10 @@ const knowledgeSchema = new mongoose.Schema({
       default: 'tr',
     },
   },
-  // Vector embedding
+  // Vector embedding (high-dimensional float array — no special DB index needed;
+  // similarity search is done in-memory via cosine similarity in embeddingService.js)
   embedding: {
     type: [Number],
-    index: '2dsphere',
   },
   // Source tracking
   source: {

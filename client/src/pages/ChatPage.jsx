@@ -537,6 +537,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
         body: JSON.stringify({ message: text.trim(), sessionId: sessionRef.current, lang }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
       if (data.message) {
         setMessages(p => [...p, { role: 'assistant', content: data.message, ts: Date.now() }]);
         if (data.phase)          setCurrentPhase(data.phase);
@@ -562,6 +563,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
     setSessionsLoading(true);
     try {
       const res  = await fetch('/api/sessions', { headers: { Authorization: `Bearer ${tokenRef.current}` } });
+      if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       setSessions(data.sessions || []);
     } catch { setSessions([]); }
@@ -573,6 +575,7 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
     setIsTyping(true);
     try {
       const res  = await fetch(`/api/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${tokenRef.current}` } });
+      if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       localStorage.setItem('ciq_session', sessionId);
       applySession(tokenRef.current, sessionId, data.session || data);
@@ -586,10 +589,11 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
     e.stopPropagation();
     if (!tokenRef.current) return;
     try {
-      await fetch(`/api/sessions/${sessionId}`, {
+      const res = await fetch(`/api/sessions/${sessionId}`, {
         method:  'DELETE',
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`);
       setSessions(p => p.filter(s => s._id !== sessionId));
       if (sessionRef.current === sessionId) {
         localStorage.removeItem('ciq_session');
@@ -612,6 +616,8 @@ export default function ChatPage({ lang, setLang, auth, onLogout, onAdmin }) {
         fetch(`/api/sessions/${sessionRef.current}/summary`, { headers: { Authorization: `Bearer ${tokenRef.current}` } }),
         fetch(`/api/sessions/${sessionRef.current}`,         { headers: { Authorization: `Bearer ${tokenRef.current}` } }),
       ]);
+      if (!sumRes.ok)  throw new Error(`Summary fetch failed (${sumRes.status})`);
+      if (!fullRes.ok) throw new Error(`Session fetch failed (${fullRes.status})`);
       const summary = await sumRes.json();
       const full    = await fullRes.json();
       setExportData({ summary, session: full.session || full });

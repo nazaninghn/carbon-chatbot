@@ -1,8 +1,17 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Session = require('../models/Session');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+// Validate :id param up-front so Mongoose never throws a CastError 500
+router.param('id', (req, res, next, id) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid session ID' });
+  }
+  next();
+});
 
 // Get all sessions for user (paginated)
 router.get('/', async (req, res) => {
