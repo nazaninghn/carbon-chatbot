@@ -157,11 +157,21 @@ FORMAT: **kalın** önemli terimler için, ✅ başarı, ⚠ uyarı, ✗ hata.`;
         });
       }
 
+      // Strip the formatted question block from stored assistant messages before
+      // sending history to the LLM.  The DB stores "✅ confirmation\n\n---\n\nQuestion…"
+      // but the LLM should only see the confirmation part — otherwise it learns
+      // to hallucinate question text in its own responses, causing duplicate questions.
       const recentHistory = conversationHistory.slice(-8);
-      messages.push(...recentHistory.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      })));
+      messages.push(...recentHistory.map((msg) => {
+        if (msg.role !== 'assistant') return { role: msg.role, content: msg.content };
+        const cleaned = msg.content
+          // Remove everything from the --- separator onward (question block starts there)
+          .replace(/\n+---\n+[\s\S]*/, '')
+          // Also strip standalone question header if --- is absent
+          .replace(/\n+\*?(?:Aşama \d+|Phase \d+)\s*[·•]\s*(?:Soru|Question)\s*\d+\/\d+\*?[\s\S]*/, '')
+          .trim();
+        return { role: 'assistant', content: cleaned || msg.content };
+      }));
 
       messages.push({ role: 'user', content: userMessage });
 

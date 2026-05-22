@@ -54,10 +54,23 @@ router.post('/message', [
                     response.metadata?.validationStatus === 'valid';
     const isPrev  = response.metadata?.action === 'prev';
 
-    let finalContent = response.content
-      .replace(/\[NEXT_QUESTION\]/g, '')
-      .replace(/\[PREV_QUESTION\]/g, '')
-      .trim();
+    // ── Extract ONLY the confirmation part from the LLM response ───────────
+    // The LLM sometimes writes the next question after [NEXT_QUESTION] (or even
+    // without the token). Slicing at the token keeps only the ✅ confirmation.
+    // The server always appends the authoritative next question from the DB below,
+    // so we must never let LLM-generated question text bleed into finalContent.
+    const nextTokIdx = response.content.indexOf('[NEXT_QUESTION]');
+    let finalContent = (nextTokIdx !== -1
+      ? response.content.slice(0, nextTokIdx)           // keep only pre-token text
+      : response.content.replace(/\[PREV_QUESTION\]/g, '')
+    ).trim();
+
+    // Fallback: strip any hallucinated question block the LLM appended without
+    // the token (detected by the formatted "*Aşama N · Soru N/133*" header).
+    finalContent = finalContent.replace(
+      /\n+\*?(?:Aşama \d+|Phase \d+)\s*[·•]\s*(?:Soru|Question)\s*\d+\/\d+\*?[\s\S]*/,
+      ''
+    ).trim();
 
     // Store answer and advance question
     if (isValid) {
